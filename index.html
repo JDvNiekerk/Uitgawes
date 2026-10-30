@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="af"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#173e32"><title>My Uitgawes</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#19352c;background:#f3f6f2}*{box-sizing:border-box}
+body{margin:0}header{background:#173e32;color:white;padding:27px 18px 23px}header h1{margin:0;font-size:27px}header p{margin:7px 0 0;color:#c9ded1}
+main{max-width:680px;margin:auto;padding:16px}section{background:white;border-radius:17px;padding:18px;margin-bottom:14px;box-shadow:0 2px 12px #173e3210}
+h2{font-size:18px;margin:0 0 15px}label{display:block;font-size:13px;font-weight:650;margin:13px 0 6px}
+input,select{width:100%;font-size:16px;padding:13px;border:1px solid #d6dfd8;border-radius:10px;background:white;color:#19352c}
+button{background:#1d6048;border:0;color:white;border-radius:10px;padding:12px 15px;font-size:14px;font-weight:650;cursor:pointer}
+button.secondary{background:#e9f0ea;color:#214735}button.danger{background:#fbe9e7;color:#9b332e}
+button:active{opacity:.8}.full{width:100%;margin-top:15px}.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.row input{flex:1}
+.total{font-size:37px;font-weight:800;color:#174c38;letter-spacing:-1px}.muted{color:#718177;font-size:13px}
+.line{display:flex;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid #e9eee9;align-items:center}.line:last-child{border-bottom:0}
+.line small{display:block;color:#748277;margin-top:4px}.money{font-weight:750;white-space:nowrap}
+.bar{height:8px;border-radius:8px;background:#e9f0ea;overflow:hidden;margin-top:7px}.bar span{display:block;height:100%;background:#70a888;border-radius:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid button{width:100%}
+#printReport{display:none}@media print{body{background:white;color:black}body>header,main{display:none!important}#printReport{display:block!important;padding:18px;font-family:Arial,sans-serif}#printReport h1{font-size:23px}#printReport table{width:100%;border-collapse:collapse;font-size:11px}#printReport th,#printReport td{padding:8px;border-bottom:1px solid #ccc;text-align:left}#printReport td:last-child,#printReport th:last-child{text-align:right}#printReport .printTotal{font-size:20px;font-weight:bold;margin:18px 0}}footer{text-align:center;color:#7b897f;font-size:12px;padding:4px 0 25px}
+</style></head><body>
+<header><h1>💰 My Uitgawes</h1><p>Eenvoudige maandelikse uitgaweboek</p></header>
+<main>
+<section><label for="month">Kies maand</label><input type="month" id="month"><p class="muted">Totale uitgawes vir die maand</p><div class="total" id="total">R 0,00</div><div class="muted" id="count">0 uitgawes</div></section>
+<section><h2>➕ Voeg uitgawe by</h2>
+<label for="date">Datum</label><input id="date" type="date">
+<label for="category">Waarvoor is dit?</label><select id="category"></select><button type="button" class="secondary full" id="quickCategory">+ Skep nuwe kategorie</button>
+<label for="description">Wat het jy gekoop?</label><input id="description" placeholder="bv. Kos, skoene, petrol">
+<label for="amount">Bedrag (R)</label><input id="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="bv. 350.00">
+<button class="full" id="save">Stoor uitgawe</button></section>
+<section><h2>📄 Maandelikse PDF</h2><p class="muted">Kies die maand bo, druk hieronder en stoor die verslag as PDF op jou iPhone.</p><button class="full" id="pdf">Maak maandverslag / PDF</button></section>
+<section><h2>📊 Opsomming per kategorie</h2><div id="summary"></div></section>
+<section><h2>🧾 Uitgawes vir die maand</h2><div id="entries"></div></section>
+<section><h2>⚙️ Kategorieë</h2><p class="muted">Voeg jou eie kategorieë by.</p><div class="row"><input id="newCategory" placeholder="bv. Vakansie" enterkeyhint="done"><button type="button" id="addCategory">Stoor kategorie</button></div><p class="muted" id="categoryStatus" aria-live="polite"></p><div id="categoryList"></div></section>
+<section><h2>💾 Rugsteun</h2><p class="muted">Jou data word net op hierdie foon se blaaier gestoor. Maak gereeld 'n rugsteun.</p>
+<div class="grid"><button id="export">Laai rugsteun af</button><button class="secondary" id="importBtn">Herstel rugsteun</button></div><input type="file" id="importFile" accept=".json,application/json" hidden></section>
+<footer>Geen rekening of Firebase nodig nie · Werk sonder internet nadat dit oopgemaak is</footer>
+</main>
+<div id="printReport"></div>
+<script>
+(function(){
+"use strict";
+const KEY="my-uitgawes-v1";
+const defaults=["Huis","Skool","Kar","Kinders","Kos","Medies","Klere","Ander"];
+const $=id=>document.getElementById(id);
+const localDate=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")};
+const money=n=>new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR"}).format(n);
+let state={categories:[...defaults],entries:[]};
+try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved&&Array.isArray(saved.categories)&&Array.isArray(saved.entries))state=saved}catch(e){alert("Kon nie vorige data lees nie. Herstel gerus jou rugsteun.")}
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));return true}catch(e){alert("Kon nie data stoor nie. Maak seker daar is bergingspasie.");return false}};
+const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function render(){
+const selected=$("category").value;
+$("category").innerHTML=state.categories.map(c=>'<option value="'+escapeHTML(c)+'">'+escapeHTML(c)+'</option>').join("");
+if(state.categories.includes(selected))$("category").value=selected;
+const entries=state.entries.filter(e=>e.date.slice(0,7)===$("month").value).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+const total=entries.reduce((s,e)=>s+e.amount,0);
+$("total").textContent=money(total);$("count").textContent=entries.length+" uitgawes";
+const groups={};for(const e of entries)groups[e.category]=(groups[e.category]||0)+e.amount;
+$("summary").innerHTML=Object.entries(groups).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>'<div class="line"><div style="flex:1"><strong>'+escapeHTML(cat)+'</strong><div class="bar"><span style="width:'+(total?val/total*100:0)+'%"></span></div></div><span class="money">'+money(val)+'</span></div>').join("")||'<p class="muted">Nog geen uitgawes vir hierdie maand nie.</p>';
+$("entries").innerHTML=entries.map(e=>'<div class="line"><div><strong>'+escapeHTML(e.description)+'</strong><small>'+escapeHTML(e.category)+' · '+escapeHTML(e.date)+'</small></div><div style="text-align:right"><div class="money">'+money(e.amount)+'</div><button class="danger" style="margin-top:7px;padding:6px 9px" data-delete="'+e.id+'">Verwyder</button></div></div>').join("")||'<p class="muted">Nog geen uitgawes aangeteken nie.</p>';
+$("categoryList").innerHTML=state.categories.map(c=>'<div class="line"><span>'+escapeHTML(c)+'</span><button class="secondary" data-remove-cat="'+escapeHTML(c)+'">Verwyder</button></div>').join("");
+}
+$("save").onclick=()=>{
+const date=$("date").value,category=$("category").value,description=$("description").value.trim(),amount=Number($("amount").value);
+if(!date||!category||!description||!Number.isFinite(amount)||amount<=0){alert("Vul asseblief die datum, kategorie, beskrywing en 'n geldige bedrag in.");return}
+const entry={id:Date.now()+Math.random(),date,category,description,amount:Math.round(amount*100)/100};
+state.entries.push(entry);if(!persist()){state.entries.pop();return}
+$("description").value="";$("amount").value="";$("month").value=date.slice(0,7);render();
+};
+function addCategory(name){
+ name=String(name||"").trim();
+ if(!name){$("categoryStatus").textContent="Tik eers die kategorie se naam in.";return false}
+ const existing=state.categories.find(c=>c.toLowerCase()===name.toLowerCase());
+ if(existing){$("category").value=existing;$("categoryStatus").textContent="Hierdie kategorie bestaan reeds en is gekies.";return true}
+ state.categories.push(name);
+ if(!persist()){state.categories.pop();$("categoryStatus").textContent="Kon nie stoor nie. Maak die app via Safari se webadres oop.";return false}
+ render();$("category").value=name;$("newCategory").value="";
+ $("categoryStatus").textContent="✓ "+name+" is gestoor en kan nou gekies word.";
+ return true;
+}
+$("addCategory").addEventListener("click",()=>addCategory($("newCategory").value));
+$("newCategory").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addCategory($("newCategory").value);$("newCategory").blur()}});
+$("quickCategory").addEventListener("click",()=>{const name=prompt("Wat is die nuwe kategorie se naam?");if(name!==null)addCategory(name)});
+$("entries").onclick=e=>{const b=e.target.closest("[data-delete]");if(!b)return;const id=Number(b.dataset.delete);
+if(confirm("Verwyder hierdie uitgawe?")){state.entries=state.entries.filter(x=>x.id!==id);persist();render()}};
+$("categoryList").onclick=e=>{const b=e.target.closest("[data-remove-cat]");if(!b)return;const name=b.dataset.removeCat;
+if(state.entries.some(x=>x.category===name)){alert("Hierdie kategorie word reeds deur uitgawes gebruik. Verwyder of verander eers daardie uitgawes.");return}
+if(state.categories.length===1){alert("Hou minstens een kategorie.");return}
+state.categories=state.categories.filter(x=>x!==name);persist();render()};
+$("month").onchange=render;
+$("pdf").onclick=()=>{
+const month=$("month").value;
+const rows=state.entries.filter(e=>e.date.slice(0,7)===month).sort((a,b)=>a.date.localeCompare(b.date));
+const total=rows.reduce((s,e)=>s+e.amount,0);
+const byCat={};for(const e of rows)byCat[e.category]=(byCat[e.category]||0)+e.amount;
+const catRows=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,n])=>"<tr><td>"+escapeHTML(c)+"</td><td>"+money(n)+"</td></tr>").join("");
+const expenseRows=rows.map(e=>"<tr><td>"+escapeHTML(e.date)+"</td><td>"+escapeHTML(e.category)+"</td><td>"+escapeHTML(e.description)+"</td><td>"+money(e.amount)+"</td></tr>").join("");
+$("printReport").innerHTML="<h1>My Uitgawes – Maandverslag</h1><p>Maand: <strong>"+escapeHTML(month)+"</strong></p><div class='printTotal'>Totale uitgawes: "+money(total)+"</div><h2>Per kategorie</h2><table><thead><tr><th>Kategorie</th><th>Bedrag</th></tr></thead><tbody>"+(catRows||"<tr><td>Geen uitgawes nie</td><td>R 0</td></tr>")+"</tbody></table><h2>Alle uitgawes</h2><table><thead><tr><th>Datum</th><th>Kategorie</th><th>Beskrywing</th><th>Bedrag</th></tr></thead><tbody>"+(expenseRows||"<tr><td colspan='4'>Geen uitgawes nie</td></tr>")+"</tbody></table>";
+window.print();
+};
+$("export").onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="my-uitgawes-rugsteun-"+localDate()+".json";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$("importBtn").onclick=()=>$("importFile").click();
+$("importFile").onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const incoming=JSON.parse(await file.text());if(!incoming||!Array.isArray(incoming.categories)||!Array.isArray(incoming.entries)||!incoming.categories.every(c=>typeof c==="string")||!incoming.entries.every(x=>typeof x.id==="number"&&typeof x.date==="string"&&typeof x.category==="string"&&typeof x.description==="string"&&typeof x.amount==="number"&&Number.isFinite(x.amount)))throw Error("Ongeldige rugsteunlêer");
+if(confirm("Herstel rugsteun? Dit vervang al jou huidige uitgawes op hierdie foon.")){state=incoming;persist();render()}}catch(err){alert("Kon nie rugsteun herstel nie: "+err.message)}finally{e.target.value=""}};
+$("date").value=localDate();$("month").value=localDate().slice(0,7);render();
+})();
+</script></body></html>
